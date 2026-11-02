@@ -1,6 +1,6 @@
 """LearnHub UI: local server (127.0.0.1 only) + a page in the browser + automatic sync while it is open.
 
-Run: .venv/bin/python app.py   (to stop: "Quit" on the page, or Ctrl+C in the terminal)
+Run: .venv/bin/python src/app.py   (to stop: "Quit" on the page, or Ctrl+C in the terminal)
 """
 import http.server
 import json
@@ -190,7 +190,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         path, _, query = self.path.partition("?")
         if path == "/":
             if not self.allowed(urllib.parse.parse_qs(query).get("k", [""])[0]):
-                return self.send(403, b"Open LearnHub Tracker using Start.command (Mac) or Start-Windows.cmd (Windows).", "text/plain")
+                return self.send(403, b"Open LearnHub Tracker using Start-Mac.command (Mac) or Start-Windows.cmd (Windows).", "text/plain")
             with open(UI, "rb") as f:
                 return self.send(200, f.read(), "text/html")
         if not self.allowed(self.headers.get("X-Key")):
@@ -295,7 +295,7 @@ def main():
     try:
         server = LocalServer(("127.0.0.1", PORT), Handler)
     except OSError:
-        # Already running (Start.command clicked again): reopen its page instead of failing.
+        # Already running (the launcher clicked again): reopen its page instead of failing.
         try:
             with open(URL_FILE) as f:
                 url = f.read()

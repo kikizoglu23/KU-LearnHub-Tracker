@@ -18,7 +18,7 @@ Downloads the files of your Koç University LearnHub courses and keeps track of 
 
 1. On this page click **Code → Download ZIP**, then unpack the ZIP. Move the folder wherever you like (for example to Documents).
 2. Start the app:
-   - **Mac:** double-click **`Start.command`**. If macOS says it cannot verify the file, open **System Settings → Privacy & Security**, click **Open Anyway** next to `Start.command`, then double-click it again (needed only once). If macOS offers to install developer tools, accept, then double-click `Start.command` again.
+   - **Mac:** double-click **`Start-Mac.command`**. If macOS says it cannot verify the file, open **System Settings → Privacy & Security**, click **Open Anyway** next to `Start-Mac.command`, then double-click it again (needed only once). If macOS offers to install developer tools, accept, then double-click `Start-Mac.command` again.
    - **Windows:** double-click **`Start-Windows.cmd`**.
 
    The first start installs what it needs (about a minute).
@@ -49,23 +49,23 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 ```
 
-Start the app (same browser UI as `Start.command`; stop with Ctrl+C):
+Start the app (same browser UI as `Start-Mac.command`; stop with Ctrl+C):
 
 ```bash
-.venv/bin/python app.py
+.venv/bin/python src/app.py
 ```
 
 Or skip the browser UI entirely:
 
 ```bash
-.venv/bin/python learnhub.py login     # log in with KU NetID in the Chrome window that opens
-.venv/bin/python learnhub.py courses   # answer y/n for each course to track
-.venv/bin/python learnhub.py sync      # download new files and check assignments, once
+.venv/bin/python src/learnhub.py login     # log in with KU NetID in the Chrome window that opens
+.venv/bin/python src/learnhub.py courses   # answer y/n for each course to track
+.venv/bin/python src/learnhub.py sync      # download new files and check assignments, once
 ```
 
-On Windows use `python` instead of `python3` and `.venv\Scripts\python.exe` instead of `.venv/bin/python`.
+On Windows use `python` instead of `python3`, `.venv\Scripts\python.exe` instead of `.venv/bin/python`, and `src\` instead of `src/`.
 
-- `sync` runs once and exits; there is no automatic 3-hour check without `app.py`.
+- `sync` runs once and exits; there is no automatic 3-hour check without `src/app.py`.
 - Without the UI, files go to `~/Documents/Courses`. To use another folder, change `download_dir` in `config.json` in the app data folder (see below), or use **Settings → Change** in the UI.
 - To update: `git pull`, then install `requirements.txt` again.
 
@@ -79,13 +79,15 @@ On Windows use `python` instead of `python3` and `.venv\Scripts\python.exe` inst
 
 ## For developers
 
-- `learnhub.py`: LearnHub client (only 5 allowed read functions, see `READ_ONLY`), file sync, assignments and quizzes, notifications, command line.
-- `app.py` + `ui.html`: local server and browser UI; no build step or framework.
-- `study_tasks.py`: task list (assignments with submission status, quizzes, Turnitin).
-- `resource_library.py`: downloaded file list and serving files that are in the download history.
-- `sync_coverage.py`: per-course check results for **Sync coverage**.
-- `windows_support.py`: Windows token encryption (DPAPI).
-- `Start.command` / `Start-Windows.cmd`: create `.venv`, install `requirements.txt` when it changes, run `app.py`.
-- Tests: `python run_tests.py` (fake course data and temporary files, never a real KU session). GitHub Actions runs them on macOS and Windows with Python 3.9 and 3.13.
+The launchers stay in the main folder; the code is in `src/` and the tests in `tests/`.
+
+- `src/learnhub.py`: LearnHub client (only 5 allowed read functions, see `READ_ONLY`), file sync, assignments and quizzes, notifications, command line.
+- `src/app.py` + `src/ui.html`: local server and browser UI; no build step or framework.
+- `src/study_tasks.py`: task list (assignments with submission status, quizzes, Turnitin).
+- `src/resource_library.py`: downloaded file list and serving files that are in the download history.
+- `src/sync_coverage.py`: per-course check results for **Sync coverage**.
+- `src/windows_support.py`: Windows token encryption (DPAPI).
+- `Start-Mac.command` / `Start-Windows.cmd` (with `src/start_windows.ps1`): create `.venv` in the main folder, install `requirements.txt` when it changes, run `src/app.py`.
+- Tests: `python tests/run_tests.py` (fake course data and temporary files, never a real KU session). GitHub Actions runs them on macOS and Windows with Python 3.9 and 3.13.
 
 Created by [Kerem İkizoğlu](https://github.com/kikizoglu23). Windows support, the task list and sync coverage were contributed by [Ahmet Salih Çiçek](https://github.com/A-Salih16).

@@ -1,4 +1,4 @@
-"""Tests for the safety rules and the sync logic. Run: .venv/bin/python test_learnhub.py"""
+"""Tests for the safety rules and the sync logic. Run: python tests/run_tests.py"""
 import base64
 import errno
 import hashlib

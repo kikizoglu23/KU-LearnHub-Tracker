@@ -15,4 +15,4 @@ if [ requirements.txt -nt .venv/.installed ]; then
     || fail "Install failed: check the internet connection, then run this again."
 fi
 
-.venv/bin/python app.py || fail "LearnHub stopped with an error (see above)."
+.venv/bin/python src/app.py || fail "LearnHub stopped with an error (see above)."

@@ -66,7 +66,7 @@ def call(function, token=None, **args):
         result = json.load(r)
     if isinstance(result, dict) and "exception" in result:
         if result.get("errorcode") in ("invalidtoken", "accessexception"):
-            raise TokenError("Token is invalid or expired: run `learnhub.py login`.")
+            raise TokenError("Token is invalid or expired: run `src/learnhub.py login`.")
         raise RuntimeError(f"{result.get('errorcode')}: {result.get('message')}")
     return result
 
@@ -81,7 +81,7 @@ def get_token():
     except FileNotFoundError:
         token = ""
     if not token:
-        raise TokenError("No saved token: run `learnhub.py login`.")
+        raise TokenError("No saved token: run `src/learnhub.py login`.")
     return token
 
 
@@ -409,7 +409,7 @@ def sync_once():
 
 def sync():
     if not load_config()["courses"]:
-        sys.exit("No tracked courses: run `learnhub.py courses` first.")
+        sys.exit("No tracked courses: run `src/learnhub.py courses` first.")
     if not sync_once():
         sys.exit("Sync partly completed. Check the log and try again.")
 
