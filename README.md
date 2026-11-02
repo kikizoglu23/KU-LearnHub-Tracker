@@ -1,99 +1,91 @@
 # LearnHub Tracker
 
-Downloads course files and tracks coursework from Koç University LearnHub on macOS and Windows
+Downloads the files of your Koç University LearnHub courses and keeps track of your assignments, on macOS and Windows.
 
 ![LearnHub Tracker](docs/screenshot.png)
 
-- **Tasks by course:** assignments with their LearnHub submission status, plus quizzes and surveys. Overdue and undated work stays visible, work due within 48 hours is highlighted, and courses with nothing in the current filter are hidden.
-- **Materials:** downloaded files in collapsible folders that mirror the LearnHub sections (and the folders on disk), searchable by filename or folder. PDFs open in the browser; other formats download; **Show** reveals the file in Finder/Explorer.
-- **Sync evidence:** Settings shows the last successful check, available/expected file counts and partial failures. Original files are never overwritten.
-- **Read-only:** the same five permitted Moodle API functions are used. KU login happens in Chrome; the password never reaches this app.
+- **Files:** new files of the courses you pick are downloaded into a `Courses` folder, one folder per course, with the same sections as on LearnHub. In the app they appear as folders you open and close, searchable by name. PDFs open in the browser; **Show** reveals a file in Finder/Explorer.
+- **Assignments:** each course lists its assignments with their LearnHub submission status, plus quizzes and surveys. Overdue work stays visible and deadlines within 48 hours are highlighted. On a Mac you also get a notification for new assignments and for unsubmitted deadlines within 48 hours.
+- **Safe:** it only reads from LearnHub (5 read-only functions), never changes or submits anything, and never overwrites a file on your computer. Your password is typed only into the KU login page.
 
 ## Requirements
 
 - macOS or Windows
-- Python 3.9 or newer
-- Google Chrome for KU NetID login
+- Google Chrome (used for the KU NetID login)
+- Windows only: Python 3.9 or newer from [python.org](https://www.python.org/downloads/windows/), installed with **Add Python to PATH** checked
 
 ## Getting started
 
-Download and unpack the repository using **Code → Download ZIP**
+1. On this page click **Code → Download ZIP**, then unpack the ZIP. Move the folder wherever you like (for example to Documents).
+2. Start the app:
+   - **Mac:** double-click **`Start.command`**. If macOS says it cannot verify the file, open **System Settings → Privacy & Security**, click **Open Anyway** next to `Start.command`, then double-click it again (needed only once). If macOS offers to install developer tools, accept, then double-click `Start.command` again.
+   - **Windows:** double-click **`Start-Windows.cmd`**.
 
-### macOS
-
-Double-click **Start.command**. If macOS blocks it, use **System Settings → Privacy & Security → Open Anyway**. Accept a developer-tools installation if prompted, then run the launcher again.
-
-### Windows
-
-Install Python from [python.org](https://www.python.org/downloads/windows/) with **Add Python to PATH** enabled, then double-click **Start-Windows.cmd**. The launcher works from folders containing spaces and installs the required login tools on first run or after requirements change.
-
-### Connect
-
-1. Use the browser page opened by the launcher
-2. Click **Log in with KU NetID** and finish login in the separate Chrome window
-3. In **Settings**, choose courses and save the selection
-4. On the first save, choose where files go (Cancel keeps `~/Documents/Courses`)
-
-Keep the launcher's terminal open for automatic checks every three hours. **Sync now** checks immediately. Reopening the launcher opens the running app. **Quit app** or closing the terminal stops checks.
+   The first start installs what it needs (about a minute).
+3. The app opens in your browser. Click **Log in with KU NetID** and log in in the Chrome window that opens; it closes by itself.
+4. Check the courses you want to track and click **Save selection**. Choose where to save files; a `Courses` folder is created there (Cancel uses `Documents/Courses`). Downloading starts.
 
 ## Daily use
 
-- Open a course to see its tasks, and its folders to see materials. Filter by course, To do / All tasks / Submitted, or search filenames and folders; a search opens the matching folders.
-- Official Moodle assignment submission status is shown when available. Quiz attempts, surveys and Turnitin submissions have **unknown official completion**; check those on LearnHub.
-- Tasks come only from LearnHub. Nothing is inferred from filenames, and no deadline is guessed from a syllabus.
-- Files removed locally are downloaded again on the next sync. Updated course files receive a new filename, preserving the earlier copy. Materials absent from the latest source list remain available as older saved files.
-- The tracker does not cover forum posts, external tools, quiz questions/attempts or full Turnitin details. Check [official LearnHub](https://learn.hub.ku.edu.tr/) for the authoritative activity list.
+Start the app the same way. Keep the terminal window it opens running (you can minimize it): while it runs, LearnHub is checked every 3 hours. **Sync now** checks right away. Starting it again while it runs just reopens the page. To stop, click **Quit app** on the page or close the terminal window.
 
-## Browser access and private data
+- **Show:** *To do* lists what is still open, *Submitted* what LearnHub has as submitted, *All tasks* both. Courses with nothing to show are hidden.
+- Quiz, survey and Turnitin completion is not available from LearnHub; those show **Check on LearnHub** and leave *To do* after their deadline.
+- Files you delete are downloaded again on the next sync. When an instructor updates a file, the new version is saved with its date in the name and the old one is kept.
+- **Settings** has the course selection, the download folder (**Change**) and **Sync coverage**: when the last full check succeeded, how many files of each course are on disk, and anything that could not be downloaded.
+- Forum posts, external tools and quiz contents are not covered; check [LearnHub](https://learn.hub.ku.edu.tr/) for those.
 
-The server listens only on `127.0.0.1:47653`. The page address carries a secret key that is new on every start, so only the page the launcher opens can talk to the app. This is local access, not an internet or campus-network service.
+## Using the terminal instead
 
-App data locations:
+Needs Python 3.9 or newer (`python3 --version`) and Google Chrome.
 
-- macOS: `~/Library/Application Support/Course_Tracking_System/` (existing installations keep their data)
-- Windows: `%LOCALAPPDATA%\LearnHubTracker\`
-
-Configuration, sync history and the Moodle login token live there. Windows protects newly saved Moodle tokens with current-user DPAPI; macOS retains the existing user-readable-only token file. These files and course downloads must not be committed. The Moodle token never enters the browser API response.
-
-Files default to `~/Documents/Courses`; the first course save asks for a folder, and **Settings → Change** picks another one later.
-
-## Terminal use
+Setup, once:
 
 ```bash
+git clone https://github.com/kikizoglu23/KU-LearnHub-Tracker.git
+cd KU-LearnHub-Tracker
 python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install -r requirements.txt
+```
+
+Start the app (same browser UI as `Start.command`; stop with Ctrl+C):
+
+```bash
 .venv/bin/python app.py
 ```
 
-On Windows, use `python` and `.venv\Scripts\python.exe` instead. The launchers handle setup automatically.
-
-The existing command-line client remains available:
+Or skip the browser UI entirely:
 
 ```bash
-.venv/bin/python learnhub.py login
-.venv/bin/python learnhub.py courses
-.venv/bin/python learnhub.py sync
+.venv/bin/python learnhub.py login     # log in with KU NetID in the Chrome window that opens
+.venv/bin/python learnhub.py courses   # answer y/n for each course to track
+.venv/bin/python learnhub.py sync      # download new files and check assignments, once
 ```
 
-CLI `sync` checks once. Only `app.py` runs the three-hour scheduler.
+On Windows use `python` instead of `python3` and `.venv\Scripts\python.exe` instead of `.venv/bin/python`.
 
-## Development and checks
+- `sync` runs once and exits; there is no automatic 3-hour check without `app.py`.
+- Without the UI, files go to `~/Documents/Courses`. To use another folder, change `download_dir` in `config.json` in the app data folder (see below), or use **Settings → Change** in the UI.
+- To update: `git pull`, then install `requirements.txt` again.
 
-No frontend build step or framework is required. The upstream Mac launcher and its pip bootstrap fix remain intact.
+## Privacy
 
-- `learnhub.py`: read-only Moodle API, downloads, activity metadata and assignment status
-- `app.py` + `ui.html`: standalone local server and browser UI
-- `resource_library.py`: downloaded file listing and indexed file access
-- `study_tasks.py`: coursework list with LearnHub submission status
-- `sync_coverage.py`: per-course checks, file revision coverage and partial failures
-- `windows_support.py`: current-user DPAPI token encryption
+- The app runs only on your computer at `127.0.0.1:47653`. The page address carries a secret key that is new on every start, so only the page the app opens can talk to it.
+- Settings, download history and the login token are kept in the app data folder:
+  - Mac: `~/Library/Application Support/Course_Tracking_System/` (the token file is readable only by your user)
+  - Windows: `%LOCALAPPDATA%\LearnHubTracker\` (the token is encrypted for your Windows user)
+- The login token never reaches the browser page.
 
-Run all offline checks:
+## For developers
 
-```bash
-python run_tests.py
-```
+- `learnhub.py`: LearnHub client (only 5 allowed read functions, see `READ_ONLY`), file sync, assignments and quizzes, notifications, command line.
+- `app.py` + `ui.html`: local server and browser UI; no build step or framework.
+- `study_tasks.py`: task list (assignments with submission status, quizzes, Turnitin).
+- `resource_library.py`: downloaded file list and serving files that are in the download history.
+- `sync_coverage.py`: per-course check results for **Sync coverage**.
+- `windows_support.py`: Windows token encryption (DPAPI).
+- `Start.command` / `Start-Windows.cmd`: create `.venv`, install `requirements.txt` when it changes, run `app.py`.
+- Tests: `python run_tests.py` (fake course data and temporary files, never a real KU session). GitHub Actions runs them on macOS and Windows with Python 3.9 and 3.13.
 
-Tests use fake course data and temporary files, never a real KU session. GitHub Actions runs them on macOS and Windows with Python 3.9 and 3.13. Chrome login and real course sync need manual verification on each OS.
-
-Originally created by [Kerem İkizoğlu](https://github.com/kikizoglu23). These additions adapt a personal Study Hub integration into a standalone tracker without student-specific schedules, course documents or local folder dependencies.
+Created by [Kerem İkizoğlu](https://github.com/kikizoglu23). Windows support, the task list and sync coverage were contributed by [Ahmet Salih Çiçek](https://github.com/A-Salih16).
