@@ -1,4 +1,4 @@
-"""Tests for retrying, scheduling and the course list in app.py. Run: .venv/bin/python test_app.py
+"""Tests for retrying, scheduling and the course list in app.py. Run: python tests/run_tests.py
 
 Never touches the network or the token file: the relevant functions are replaced with fakes.
 """
