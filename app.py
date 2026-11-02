@@ -143,13 +143,11 @@ def active_courses():
 
 def api_status():
     cfg, state = lh.load_config(), lh.load_state()
-    # Recently downloaded files; old entries have no "at" (download time), so the upload time is used instead.
-    files = sorted(state["files"].values(), key=lambda v: v.get("at", v["timemodified"]), reverse=True)[:8]
+    # Tasks and materials come from /api/tasks and /api/resources.
     return {**status, "last_sync":state.get('last_successful_sync',status['last_sync']),
             "coverage":sync_coverage.summary(cfg,state),
             "download_dir": os.path.expanduser(cfg["download_dir"]), "tracked": cfg["courses"],
-            "upcoming": state.get("upcoming", []), "activities":state.get('activities',[]), "recent": list(lh.RECENT)[:30],
-            "files": [{"path": v["path"], "at": v.get("at", v["timemodified"])} for v in files]}
+            "recent": list(lh.RECENT)[:30]}
 
 
 def reveal(rel):
@@ -247,12 +245,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except (ValueError, KeyError, TypeError):
             return self.send(400, {"error": "invalid request"})
         path = self.path
-        if path == '/api/tasks':
-            try:
-                return self.send(200, study_tasks.update(body))
-            except ValueError:
-                return self.send(400, {'error': 'Invalid task or completion value.'})
-        elif path == "/api/login":
+        if path == "/api/login":
             start(run_login)
         elif path == "/api/courses":
             first = not os.path.exists(lh.CONFIG)
@@ -289,7 +282,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 class LocalServer(http.server.ThreadingHTTPServer):
     # Windows SO_REUSEADDR can let two app instances bind the same port.
     # They then disagree about the session key and valid pages return 403.
-    allow_reuse_address = False
+    # Elsewhere it only allows a restart right after Quit (port in TIME_WAIT).
+    allow_reuse_address = sys.platform != 'win32'
 
     def server_bind(self):
         if sys.platform == 'win32':

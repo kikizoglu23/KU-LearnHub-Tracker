@@ -361,13 +361,11 @@ def is_submitted(assign_id):
 def sync_assignments(cfg, state):
     now = time.time()
     upcoming = []
-    assessments = []
     courses = call("mod_assign_get_assignments", courseids=[int(c) for c in cfg["courses"]])["courses"]
     for course in courses:
         short = cfg["courses"].get(str(course["id"]), course["shortname"])
         for a in course["assignments"]:
-            if a.get("nosubmissions"):  # Keep assessment metadata, never treat it as a submission.
-                assessments.append({'course':short,'id':a.get('cmid'),'name':html.unescape(a['name']),'due':a.get('duedate',0),'url':f"{SITE}/course/view.php?id={course['id']}"})
+            if a.get("nosubmissions"):  # a grade item without submissions (exam, participation)
                 continue
             seen = state["assignments"].setdefault(str(a["id"]), {"notified_new": False, "notified_due": False})
             due = a["duedate"]
@@ -384,7 +382,6 @@ def sync_assignments(cfg, state):
                 seen["notified_due"] = True
                 notify(f"Due soon: {short}", f"{name} is not submitted! Due: {due_text}")
     state["upcoming"] = sorted(upcoming, key=lambda u: u["due"] or float("inf"))
-    state["assessments"] = assessments
 
 
 def sync_once():

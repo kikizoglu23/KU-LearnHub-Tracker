@@ -94,7 +94,6 @@ def test_assignment_notifications():
         learnhub.sync_assignments({"courses": {"9": "X"}}, state)
         assert sent == ["New assignment:New", "New assignment:Urgent", "Due soon:Urgent", "New assignment:Done"], sent
         assert {a['name'] for a in state['upcoming']} == {'Old', 'New', 'Urgent', 'Done'}
-        assert state['assessments'][0]['name'] == 'Exam'
         # Undated submissions remain visible without a fabricated deadline.
         assigns.append({'id': 6, 'name': 'Undated', 'duedate': 0})
         sent.clear()

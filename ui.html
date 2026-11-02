@@ -138,6 +138,8 @@
   .course-group + .course-group { border-top:1px solid var(--border); }
   .course-group > summary { cursor:pointer; padding:14px 16px; font-weight:650; overflow-wrap:anywhere; }
   .course-group h3 { margin:12px 16px 2px; font-size:14px; }
+  .folder-group { margin-left:16px; }
+  .folder-group > summary { cursor:pointer; padding:10px 16px; font-weight:600; overflow-wrap:anywhere; }
   .task-title { font-weight:500; overflow-wrap:anywhere; }
   .task-row { border-bottom:1px solid var(--border); }
   .task-row:last-child { border-bottom:0; }
@@ -180,12 +182,12 @@
   <div id="app" hidden>
     <div class="filters">
       <label>Course <select id="course-filter" aria-label="Course"><option value="">All courses</option></select></label>
-      <label>Show <select id="task-filter" aria-label="Show"><option value="pending">To do</option><option value="all">All tasks</option><option value="done">Completed</option></select></label>
+      <label>Show <select id="task-filter" aria-label="Show"><option value="pending">To do</option><option value="all">All tasks</option><option value="done">Submitted</option></select></label>
       <label class="search-label">Find material <input id="file-search" type="search" placeholder="Filename or folder"></label>
     </div>
     <section class="card section">
       <div class="card-h"><h2>Course tasks</h2><span class="badge" id="up-count"></span></div>
-      <p class="hint">Ticks are your personal record and do not submit work to LearnHub. Dates come from LearnHub; practice files have no inferred deadline.</p>
+      <p class="hint">Dates and submission status come from LearnHub. Quiz and Turnitin completion isn't available; check those on LearnHub.</p>
       <div id="upcoming"></div>
     </section>
     <section class="card section">
@@ -309,18 +311,19 @@ async function loadCourses() {
 
 let tasks = [], materials = [], courseNames = [], dataSignature = '', coverageSignature = '';
 const openTasks = new Set(), openMaterials = new Set();
-function group(parent, name, count, opened) {
-  const detail = el('details', undefined, 'course-group');
-  detail.open = opened.has(name);
+function group(parent, name, count, opened, key = name, cls = 'course-group') {
+  const detail = el('details', undefined, cls);
+  detail.open = opened.has(key);
   const summary = el('summary', name + ' · ' + count);
   detail.append(summary); parent.append(detail);
-  detail.addEventListener('toggle', () => detail.open ? opened.add(name) : opened.delete(name));
+  detail.addEventListener('toggle', () => detail.open ? opened.add(key) : opened.delete(key));
   return detail;
 }
 function matchesTask(t) {
   const selected = $('task-filter').value;
-  const done = t.official_submitted || t.personal_done;
-  return selected === 'all' || (selected === 'done' ? done : !done);
+  // Unknown status (quizzes, Turnitin): counts as to do until its deadline passes.
+  const done = t.status_known ? t.submitted : t.due && t.due * 1000 < Date.now();
+  return selected === 'all' || (selected === 'done' ? t.submitted : !done);
 }
 function renderUpcoming() {
   const box = $('upcoming'); box.textContent = '';
@@ -329,10 +332,10 @@ function renderUpcoming() {
   $('up-count').textContent = visible.length + ' shown';
   for (const name of courseNames.filter(c => !selected || c === selected)) {
     const list = visible.filter(t => t.course === name);
+    if (!list.length) continue;  // courses with nothing in this view stay hidden
     const detail = group(box, name, list.length, openTasks);
     if (selected) detail.open = true;
-    if (!list.length) detail.append(el('p', 'No tasks in this view.', 'empty'));
-    for (const kind of ['Assignments', 'Quizzes & surveys', 'Problem sets & labs', 'Other assessments']) {
+    for (const kind of ['Assignments', 'Quizzes & surveys']) {
       const items = list.filter(t => t.kind === kind);
       if (!items.length) continue;
       detail.append(el('h3', kind));
@@ -343,26 +346,18 @@ function renderUpcoming() {
         if (t.url) { link.href = t.url; link.target = '_blank'; link.rel = 'noopener'; }
         main.append(link);
         const date = t.due ? when(t.due) + ' · ' + left(t.due) : 'No due date';
-        const urgent = t.due && !t.personal_done && !t.official_submitted && t.due * 1000 - Date.now() < 48 * 3600000;
+        const hours = (t.due * 1000 - Date.now()) / 3.6e6;
+        const urgent = t.due && !t.submitted && hours < 48;
         main.append(el('div', date, 'small ' + (urgent ? 'due-soon' : 'muted')));
-        if (!t.status_known && kind !== 'Problem sets & labs') main.append(el('div', 'LearnHub completion not available', 'small muted'));
-        const tick = el('button', t.official_submitted ? '✓ Submitted on LearnHub' : t.personal_done ? '✓ Done' : 'Mark done');
-        tick.disabled = t.official_submitted;
-        tick.setAttribute('aria-pressed', String(t.official_submitted || t.personal_done));
-        tick.setAttribute('aria-label', (t.personal_done ? 'Undo completion: ' : 'Mark done: ') + t.name);
-        tick.title = 'Personal record only';
-        tick.onclick = async () => {
-          tick.disabled = true;
-          try {
-            await api('/api/tasks', {id:t.id, done:!t.personal_done});
-            t.personal_done = !t.personal_done; dataSignature = ''; renderUpcoming();
-          } catch (e) { tick.disabled = false; toast(e.message); }
-        };
-        row.append(main, tick); detail.append(row);
+        const badge = t.submitted ? el('span', '✓ Submitted', 'badge ok')
+          : !t.status_known ? el('span', 'Check on LearnHub', 'badge')
+          : el('span', t.due && hours < 0 ? 'Not submitted' : 'To submit', 'badge ' + (urgent ? 'danger' : 'warn'));
+        row.append(main, badge); detail.append(row);
       }
     }
   }
   if (!courseNames.length) box.append(el('p', 'Choose courses in Settings to begin.', 'empty'));
+  else if (!visible.length) box.append(el('p', 'No tasks in this view.', 'empty'));
 }
 function renderFiles() {
   const box = $('files'); box.textContent = '';
@@ -373,22 +368,31 @@ function renderFiles() {
     const items = list.filter(f => f.course === name);
     const detail = group(box, name, items.length, openMaterials);
     if (selected || query) detail.open = true;
-    for (const category of [...new Set(items.map(f => f.category))].sort()) {
-      detail.append(el('h3', category));
-      for (const f of items.filter(f => f.category === category).sort((a,b) => a.path.localeCompare(b.path, undefined, {numeric:true}))) {
-        const row = el('div', undefined, 'item');
-        const main = el('div', undefined, 'main');
-        const link = el('a', f.name, 'task-title');
-        link.href = '/api/resource?path=' + encodeURIComponent(f.path); link.target = '_blank'; link.rel = 'noopener';
-        main.append(link, el('div', f.section + (f.current === false ? ' · Saved from an earlier sync' : ''), 'small muted'));
-        const show = el('button', 'Show', 'ghost small');
-        show.title = navigator.platform.startsWith('Win') ? 'Show in Explorer' : 'Show in Finder';
-        show.onclick = () => api('/api/reveal', {path: f.path}).catch(e => toast(e.message));
-        row.append(main, show); detail.append(row);
-      }
-    }
+    folderTree(detail, items.map(f => ({...f, parts: f.section ? f.section.split(' / ') : []})), name, 0, !!query);
   }
   if (!list.length) box.append(el('p', 'No matching materials.', 'empty'));
+}
+// Folders follow the LearnHub sections (and the folders on disk); each opens on click. A search opens all of them.
+function folderTree(parent, files, key, depth, expand) {
+  const sorted = (a, b) => a.localeCompare(b, undefined, {numeric:true});
+  const deeper = files.filter(f => f.parts.length > depth);
+  for (const name of [...new Set(deeper.map(f => f.parts[depth]))].sort(sorted)) {
+    const inside = deeper.filter(f => f.parts[depth] === name);
+    const folder = group(parent, calm(name), inside.length, openMaterials, key + '/' + name, 'folder-group');
+    if (expand) folder.open = true;
+    folderTree(folder, inside, key + '/' + name, depth + 1, expand);
+  }
+  for (const f of files.filter(f => f.parts.length === depth).sort((a,b) => sorted(a.name, b.name))) {
+    const row = el('div', undefined, 'item');
+    const main = el('div', undefined, 'main');
+    const link = el('a', f.name, 'task-title');
+    link.href = '/api/resource?path=' + encodeURIComponent(f.path); link.target = '_blank'; link.rel = 'noopener';
+    main.append(link, el('div', 'Downloaded ' + when(f.at) + (f.current === false ? ' · Saved from an earlier sync' : ''), 'small muted'));
+    const show = el('button', 'Show', 'ghost small');
+    show.title = navigator.platform.startsWith('Win') ? 'Show in Explorer' : 'Show in Finder';
+    show.onclick = () => api('/api/reveal', {path: f.path}).catch(e => toast(e.message));
+    row.append(main, show); parent.append(row);
+  }
 }
 function renderCoverage(s) {
   const signature = JSON.stringify(s.coverage);
