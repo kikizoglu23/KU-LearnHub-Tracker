@@ -6,12 +6,16 @@ import http.server
 import json
 import os
 import secrets
+import socket
 import subprocess
 import sys
 import threading
 import time
 import urllib.parse
 import webbrowser
+import resource_library
+import sync_coverage
+import study_tasks
 
 import learnhub as lh
 
@@ -59,13 +63,16 @@ def run_sync():
         try:
             if lh.sync_once():
                 status["last_sync"] = time.time()
-            status["error"] = None
+                status["error"] = None
+            else:
+                status["error"] = ("Sync partly completed. Check sync coverage in Settings."
+                                   if lh.load_config()["courses"] else None)
         except lh.TokenError:
             status["user"] = status["has_token"] = None
             status["error"] = "Your session has expired; log in again."
             lh.notify("LearnHub", "Your session has expired. Log in again from the UI.")
         except Exception as e:  # network drop, etc.: retried on the next round
-            status["error"] = f"{type(e).__name__}: {e}"
+            status["error"] = f"Sync failed ({type(e).__name__}). Check your connection and retry."
             lh.log(f"[error] {status['error']}")
         finally:
             status["syncing"] = False
@@ -99,7 +106,7 @@ def run_login():
         status["error"] = None
         start(run_sync)
     except Exception as e:
-        status["error"] = f"Login failed: {e}"
+        status["error"] = f"Login failed ({type(e).__name__}). Finish KU login in Chrome and try again."
     finally:
         status["logging_in"] = False
         login_lock.release()
@@ -107,6 +114,12 @@ def run_login():
 
 def pick_folder():
     """Files go into a "Courses" folder inside the chosen one (not created again if Courses itself is chosen)."""
+    if sys.platform == "win32":
+        # Run the native chooser in a separate process; Tk must own its UI thread.
+        script = 'import tkinter as t; from tkinter import filedialog; r=t.Tk(); r.withdraw(); print(filedialog.askdirectory(title="Choose a download folder")); r.destroy()'
+        r = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+        chosen = r.stdout.strip()
+        return (chosen if os.path.basename(chosen) == "Courses" else os.path.join(chosen, "Courses")) if chosen else None
     r = subprocess.run(["osascript", "-e", 'POSIX path of (choose folder with prompt '
                         '"Where should LearnHub save files? A Courses folder will be created inside it.")'],
                        capture_output=True, text=True)
@@ -130,20 +143,24 @@ def active_courses():
 
 def api_status():
     cfg, state = lh.load_config(), lh.load_state()
-    # Recently downloaded files; old entries have no "at" (download time), so the upload time is used instead.
-    files = sorted(state["files"].values(), key=lambda v: v.get("at", v["timemodified"]), reverse=True)[:8]
-    return {**status, "download_dir": os.path.expanduser(cfg["download_dir"]), "tracked": cfg["courses"],
-            "upcoming": state.get("upcoming", []), "recent": list(lh.RECENT)[:30],
-            "files": [{"path": v["path"], "at": v.get("at", v["timemodified"])} for v in files]}
+    # Tasks and materials come from /api/tasks and /api/resources.
+    return {**status, "last_sync":state.get('last_successful_sync',status['last_sync']),
+            "coverage":sync_coverage.summary(cfg,state),
+            "download_dir": os.path.expanduser(cfg["download_dir"]), "tracked": cfg["courses"],
+            "recent": list(lh.RECENT)[:30]}
 
 
 def reveal(rel):
     """Shows a file from the download folder in Finder. A path that leaves the folder is rejected."""
     root = os.path.realpath(os.path.expanduser(lh.load_config()["download_dir"]))
     path = os.path.realpath(os.path.join(root, rel))
-    if os.path.commonpath([root, path]) != root or not os.path.exists(path):
+    try:
+        inside = os.path.commonpath([root, path]) == root
+    except ValueError:
+        inside = False
+    if not inside or not os.path.exists(path):
         return False
-    subprocess.run(["open", "-R", path])
+    subprocess.run(["explorer.exe", "/select,", path] if sys.platform == "win32" else ["open", "-R", path])
     return True
 
 
@@ -155,7 +172,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         data = body if isinstance(body, bytes) else json.dumps(body, ensure_ascii=False).encode()
         self.send_response(code)
         self.send_header("Content-Type", f"{ctype}; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
         self.end_headers()
         self.wfile.write(data)
 
@@ -169,12 +190,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
         path, _, query = self.path.partition("?")
         if path == "/":
             if not self.allowed(urllib.parse.parse_qs(query).get("k", [""])[0]):
-                return self.send(403, b"Open this page from the address printed in the terminal.", "text/plain")
+                return self.send(403, b"Open LearnHub Tracker using Start.command (Mac) or Start-Windows.cmd (Windows).", "text/plain")
             with open(UI, "rb") as f:
                 return self.send(200, f.read(), "text/html")
         if not self.allowed(self.headers.get("X-Key")):
             return self.send(403, {"error": "unauthorized"})
         try:
+            if path == '/api/tasks':
+                return self.send(200, study_tasks.build())
+            if path == '/api/resources':
+                return self.send(200, {'resources':resource_library.resources()})
+            if path == '/api/resource':
+                target=resource_library.resource_path(urllib.parse.parse_qs(query).get('path',[''])[0])
+                if target is None: return self.send(404, {'error':'File not found. Sync again if the file was moved.'})
+                pdf=target.suffix.casefold()=='.pdf'
+                self.send_response(200)
+                self.send_header('Content-Type','application/pdf' if pdf else 'application/octet-stream')
+                self.send_header('Content-Length',str(target.stat().st_size))
+                self.send_header('Content-Disposition',('inline' if pdf else 'attachment')+"; filename*=UTF-8''"+urllib.parse.quote(target.name))
+                self.send_header('Cache-Control','no-store')
+                self.send_header('X-Content-Type-Options','nosniff')
+                self.send_header('Referrer-Policy','no-referrer')
+                self.end_headers()
+                with target.open('rb') as source:
+                    while chunk:=source.read(65536): self.wfile.write(chunk)
+                return
             if path == "/api/status":
                 return self.send(200, api_status())
             if path == "/api/courses":
@@ -183,15 +223,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
             status["user"] = status["has_token"] = None
             return self.send(401, {"error": "Not logged in; log in first."})
         except Exception as e:
-            return self.send(500, {"error": f"{type(e).__name__}: {e}"})
+            return self.send(500, {"error": f"LearnHub request failed ({type(e).__name__}). Try again."})
         self.send(404, {"error": "not found"})
 
     def do_POST(self):
+        origin = self.headers.get('Origin')
+        if origin and origin not in (f'http://127.0.0.1:{PORT}', f'http://localhost:{PORT}'):
+            return self.send(403, {"error":"unauthorized origin"})
         if not self.allowed(self.headers.get("X-Key")):
             return self.send(403, {"error": "unauthorized"})
         try:
-            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
-        except ValueError:
+            length = int(self.headers.get("Content-Length") or 0)
+            if not 0 <= length <= 100000: raise ValueError('body too large')
+            body = json.loads(self.rfile.read(length) or b"{}")
+            if not isinstance(body, dict): raise ValueError('expected object')
+            if self.path == '/api/courses':
+                items = body.get('courses', [])
+                if not isinstance(items, list) or len(items) > 100: raise ValueError('invalid courses')
+                for c in items:
+                    if not isinstance(c, dict) or int(c['id']) <= 0 or not isinstance(c['short'], str): raise ValueError('invalid course')
+        except (ValueError, KeyError, TypeError):
             return self.send(400, {"error": "invalid request"})
         path = self.path
         if path == "/api/login":
@@ -218,7 +269,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/open":
             folder = os.path.expanduser(lh.load_config()["download_dir"])
             os.makedirs(folder, exist_ok=True)
-            subprocess.run(["open", folder])
+            subprocess.run(["explorer.exe", folder] if sys.platform == "win32" else ["open", folder])
         elif path == "/api/quit":
             self.send(200, {"ok": True})
             threading.Timer(0.3, lambda: os._exit(0)).start()
@@ -228,9 +279,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send(200, {"ok": True})
 
 
+class LocalServer(http.server.ThreadingHTTPServer):
+    # Windows SO_REUSEADDR can let two app instances bind the same port.
+    # They then disagree about the session key and valid pages return 403.
+    # Elsewhere it only allows a restart right after Quit (port in TIME_WAIT).
+    allow_reuse_address = sys.platform != 'win32'
+
+    def server_bind(self):
+        if sys.platform == 'win32':
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 def main():
     try:
-        server = http.server.ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+        server = LocalServer(("127.0.0.1", PORT), Handler)
     except OSError:
         # Already running (Start.command clicked again): reopen its page instead of failing.
         try:
