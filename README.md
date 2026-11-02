@@ -47,7 +47,7 @@ Keep the launcher's terminal open for automatic checks every three hours. **Sync
 
 ## Browser access and private data
 
-The server listens only on `127.0.0.1:47653`. Open the authorized URL from the launcher once in each browser profile. A local HttpOnly, SameSite cookie keeps that profile connected across restarts. The URL key is removed from the address bar after loading. This is local access, not an internet or campus-network service.
+The server listens only on `127.0.0.1:47653`. The page address carries a secret key that is new on every start, so only the page the launcher opens can talk to the app. This is local access, not an internet or campus-network service.
 
 App data locations:
 

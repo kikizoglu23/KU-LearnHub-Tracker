@@ -16,15 +16,13 @@ import webbrowser
 import resource_library
 import sync_coverage
 import study_tasks
-from pathlib import Path
-from http.cookies import SimpleCookie
 
 import learnhub as lh
 
 PORT = 47653
 SYNC_EVERY = 3 * 3600
 UI = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui.html")
-KEY = secrets.token_urlsafe(24)  # tests/imports; main loads this installation's saved local key
+KEY = secrets.token_urlsafe(24)  # the UI's secret key; new on every start
 URL_FILE = os.path.join(lh.DATA_DIR, "ui_url")  # lets a second start reopen the running instance's page
 
 # has_token: if there is a token but LearnHub can't be reached, the UI shows "offline" instead of the login box.
@@ -37,29 +35,6 @@ login_lock = threading.Lock()
 
 def ui_url():
     return f"http://127.0.0.1:{PORT}/?k={KEY}"
-
-
-def load_ui_key():
-    """Keep authorized browser profiles working across app restarts."""
-    os.makedirs(lh.DATA_DIR, exist_ok=True)
-    keyfile=Path(lh.DATA_DIR)/'ui_key'
-    if keyfile.exists():
-        value=keyfile.read_text(encoding='ascii').strip()
-        if len(value)!=32 or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_' for c in value):
-            raise ValueError('Saved app access key is damaged. Remove ui_key in the app data folder and reopen the launcher.')
-        return value
-    value=secrets.token_urlsafe(24)
-    # Reuse the current launch key during migration, preserving current sessions.
-    try:
-        previous=urllib.parse.urlparse(Path(URL_FILE).read_text().strip())
-        candidate=urllib.parse.parse_qs(previous.query).get('k',[''])[0]
-        if previous.hostname=='127.0.0.1' and previous.port==PORT and len(candidate)==32 and all(c in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_' for c in candidate):
-            value=candidate
-    except (OSError,ValueError):
-        pass
-    with os.fdopen(os.open(keyfile,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600),'w') as f:
-        f.write(value)
-    return value
 
 
 def check_user():
@@ -204,8 +179,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
-        if ctype == "text/html":
-            self.send_header("Set-Cookie", f"study_session={KEY}; Path=/; HttpOnly; SameSite=Lax; Max-Age=7776000")
         self.end_headers()
         self.wfile.write(data)
 
@@ -213,21 +186,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # Host check: against DNS rebinding (another site's name pointed at 127.0.0.1).
         # Key check: open websites must not be able to send requests to the UI.
         host_ok = self.headers.get("Host") in (f"127.0.0.1:{PORT}", f"localhost:{PORT}")
-        cookie = SimpleCookie()
-        try: cookie.load(self.headers.get("Cookie", ""))
-        except Exception: pass
-        session = cookie.get("study_session")
-        return host_ok and (secrets.compare_digest(key or "", KEY) or
-                            bool(session and secrets.compare_digest(session.value, KEY)))
+        return host_ok and secrets.compare_digest(key or "", KEY)
 
     def do_GET(self):
         path, _, query = self.path.partition("?")
         if path == "/":
             if not self.allowed(urllib.parse.parse_qs(query).get("k", [""])[0]):
-                return self.send(403, b"Open LearnHub Tracker using Start.command (Mac) or Start-Windows.cmd (Windows). Each browser profile needs the launcher link once.", "text/plain")
-            text = Path(UI).read_text(encoding="utf-8")
-            config = '<script>window.LEARNHUB_CONFIG=' + json.dumps({"key": KEY}) + ';</script>'
-            return self.send(200, text.replace('<head>', '<head>' + config, 1).encode(), "text/html")
+                return self.send(403, b"Open LearnHub Tracker using Start.command (Mac) or Start-Windows.cmd (Windows).", "text/plain")
+            with open(UI, "rb") as f:
+                return self.send(200, f.read(), "text/html")
         if not self.allowed(self.headers.get("X-Key")):
             return self.send(403, {"error": "unauthorized"})
         try:
@@ -288,7 +255,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/login":
             start(run_login)
         elif path == "/api/courses":
+            first = not os.path.exists(lh.CONFIG)
             cfg = lh.load_config()
+            if first:  # first save, nothing downloaded yet: ask where files go (Cancel keeps the default)
+                cfg["download_dir"] = pick_folder() or cfg["download_dir"]
             cfg["courses"] = {str(int(c["id"])): str(c["short"]) for c in body.get("courses", [])}
             lh.save_json(lh.CONFIG, cfg)
             start(run_sync)
@@ -328,7 +298,6 @@ class LocalServer(http.server.ThreadingHTTPServer):
 
 
 def main():
-    global KEY
     try:
         server = LocalServer(("127.0.0.1", PORT), Handler)
     except OSError:
@@ -342,7 +311,6 @@ def main():
         webbrowser.open(url)
         return
     os.makedirs(lh.DATA_DIR, exist_ok=True)
-    KEY=load_ui_key()
     # 0600 like the token: the URL holds the UI key, only this user may read it.
     with os.fdopen(os.open(URL_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
         f.write(ui_url())

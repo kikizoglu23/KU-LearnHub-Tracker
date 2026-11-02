@@ -49,26 +49,35 @@ def run():
                 try:
                     assert request('/')[0] == 403
                     code, headers, body = request('/?k=test-only')
-                    assert code == 200 and b'Course tasks' in body and b'LEARNHUB_CONFIG' in body
+                    assert code == 200 and b'Course tasks' in body
                     assert int(headers['Content-Length']) == len(body)
-                    cookie = headers['Set-Cookie'].split(';')[0]
-                    assert all(flag in headers['Set-Cookie'] for flag in ('HttpOnly', 'SameSite=Lax', 'Max-Age='))
-                    assert request('/', headers={'Cookie': cookie})[0] == 200
+                    assert 'Set-Cookie' not in headers
+                    assert request('/', headers={'Cookie': 'study_session=test-only'})[0] == 403  # no cookie auth
                     assert request('/api/tasks')[0] == 403
-                    assert request('/api/tasks', headers={'Cookie': cookie})[0] == 200
+                    assert request('/api/tasks', headers={'X-Key': 'test-only'})[0] == 200
                     assert request('/api/status', headers={'X-Key': 'test-only', 'Host': 'evil.example'})[0] == 403
-                    assert request('/api/tasks', 'POST', '{}', {'Cookie': cookie, 'Origin': 'https://evil.example'})[0] == 403
-                    assert request('/api/tasks', 'POST', '[]', {'Cookie': cookie})[0] == 400
-                    assert request('/api/tasks', 'POST', '{}', {'Cookie': cookie})[0] == 400
-                    assert request('/api/tasks', 'POST', '{}', {'Cookie': cookie, 'Content-Length': '100001'})[0] == 400
+                    assert request('/api/tasks', 'POST', '{}', {'X-Key': 'test-only', 'Origin': 'https://evil.example'})[0] == 403
+                    assert request('/api/tasks', 'POST', '[]', {'X-Key': 'test-only'})[0] == 400
+                    assert request('/api/tasks', 'POST', '{}', {'X-Key': 'test-only'})[0] == 400
+                    assert request('/api/tasks', 'POST', '{}', {'X-Key': 'test-only', 'Content-Length': '100001'})[0] == 400
                     payload = json.dumps({'id': lab['id'], 'done': False})
-                    assert request('/api/tasks', 'POST', payload, {'Cookie': cookie})[0] == 200
+                    assert request('/api/tasks', 'POST', payload, {'X-Key': 'test-only'})[0] == 200
                     for path in ('/.local/token', '/app.py', '/%2e%2e/README.md', '/ui.html'):
-                        assert request(path, headers={'Cookie': cookie})[0] == 404
+                        assert request(path, headers={'X-Key': 'test-only'})[0] == 404
+                    # The first course save asks where files go; later saves don't.
+                    saved = root / 'config.json'
+                    chosen = str(root / 'Chosen' / 'Courses')
+                    with mock.patch.object(lh, 'CONFIG', str(saved)), mock.patch.object(app, 'start'), \
+                         mock.patch.object(app, 'pick_folder', return_value=chosen) as pick:
+                        courses = json.dumps({'courses': [{'id': 1, 'short': 'TEST101'}]})
+                        for _ in range(2):
+                            assert request('/api/courses', 'POST', courses, {'X-Key': 'test-only'})[0] == 200
+                        assert pick.call_count == 1
+                        assert json.loads(saved.read_text())['download_dir'] == chosen
                 finally:
                     server.shutdown()
                     server.server_close()
-    print('PASS: standalone UI, task persistence, official/personal separation, auth, CSRF, body limits and private paths')
+    print('PASS: standalone UI, task persistence, official/personal separation, auth, CSRF, body limits, private paths and first-save folder choice')
 
 
 if __name__ == '__main__':

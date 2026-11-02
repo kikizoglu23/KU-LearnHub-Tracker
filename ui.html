@@ -218,11 +218,7 @@
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script>
-const K = window.LEARNHUB_CONFIG.key;
-if (new URLSearchParams(location.search).has('k')) {
-  const clean = new URL(location.href); clean.searchParams.delete('k');
-  history.replaceState(null, '', clean.pathname + clean.search + clean.hash);
-}
+const K = new URLSearchParams(location.search).get('k');
 const $ = id => document.getElementById(id);
 
 async function api(path, body) {
@@ -385,7 +381,10 @@ function renderFiles() {
         const link = el('a', f.name, 'task-title');
         link.href = '/api/resource?path=' + encodeURIComponent(f.path); link.target = '_blank'; link.rel = 'noopener';
         main.append(link, el('div', f.section + (f.current === false ? ' · Saved from an earlier sync' : ''), 'small muted'));
-        row.append(main); detail.append(row);
+        const show = el('button', 'Show', 'ghost small');
+        show.title = navigator.platform.startsWith('Win') ? 'Show in Explorer' : 'Show in Finder';
+        show.onclick = () => api('/api/reveal', {path: f.path}).catch(e => toast(e.message));
+        row.append(main, show); detail.append(row);
       }
     }
   }
@@ -431,7 +430,7 @@ async function refreshData() {
   try { s = await api('/api/status'); }
   catch (e) {  // no e.status: the server could not be reached at all
     $('who').textContent = !e.status ? 'LearnHub is not running. Reopen Start.command or Start-Windows.cmd.'
-      : e.status === 403 ? 'Reconnect this browser using the page opened by the launcher.'
+      : e.status === 403 ? 'This tab is out of date; use the page opened by the launcher.'
       : 'Something went wrong: ' + e.message;
     return;
   }
